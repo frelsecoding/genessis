@@ -32,10 +32,10 @@ class NativeResampler {
       final DynamicLibrary nativeLib = _openDynamicLibrary();
       debugPrint("NativeResampler: Dynamic library opened successfully.");
       _resampleAudio = nativeLib
-          .lookup<NativeFunction<ResampleAudioNative>>('resample_audio')
+          .lookup<NativeFunction<ResampleAudioNative>>('_resample_audio')
           .asFunction<ResampleAudioDart>();
       _isInitialized = true;
-      debugPrint("NativeResampler: FFI function 'resample_audio' looked up. Initialization SUCCESSFUL.");
+      debugPrint("NativeResampler: FFI function '_resample_audio' looked up. Initialization SUCCESSFUL.");
     } catch (e) {
       _isInitialized = false;
       debugPrint("NativeResampler: FFI lookup FAILED. Error: $e");
@@ -93,7 +93,7 @@ class NativeResampler {
 
     List<double>? result;
     try {
-      debugPrint("NativeResampler: Calling native 'resample_audio' function...");
+      debugPrint("NativeResampler: Calling native '_resample_audio' function...");
       final int outputFramesGenerated = _resampleAudio(
         inputPtr,
         inputFrames,
@@ -101,7 +101,7 @@ class NativeResampler {
         estimatedOutputFrames,
         srcRatio,
       );
-      debugPrint("NativeResampler: Native 'resample_audio' returned: $outputFramesGenerated frames.");
+      debugPrint("NativeResampler: Native '_resample_audio' returned: $outputFramesGenerated frames.");
 
       if (outputFramesGenerated >= 0) {
         final outputList = outputPtr.asTypedList(outputFramesGenerated);
