@@ -32,10 +32,10 @@ class NativeResampler {
       final DynamicLibrary nativeLib = _openDynamicLibrary();
       debugPrint("NativeResampler: Dynamic library opened successfully.");
       _resampleAudio = nativeLib
-          .lookup<NativeFunction<ResampleAudioNative>>('_resample_audio')
+          .lookup<NativeFunction<ResampleAudioNative>>('resample_audio')
           .asFunction<ResampleAudioDart>();
       _isInitialized = true;
-      debugPrint("NativeResampler: FFI function '_resample_audio' looked up. Initialization SUCCESSFUL.");
+      debugPrint("NativeResampler: FFI function 'resample_audio' looked up. Initialization SUCCESSFUL.");
     } catch (e) {
       _isInitialized = false;
       debugPrint("NativeResampler: FFI lookup FAILED. Error: $e");
