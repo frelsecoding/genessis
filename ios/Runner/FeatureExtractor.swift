@@ -6,6 +6,67 @@ fileprivate func printFE(_ message: String) {
      print("[FeatureExtractor Swift] \(message)") // Uncomment for debugging
 }
 
+fileprivate func normalizeAudioRMS(audioData: UnsafePointer<Float>, length: Int, targetRMS: Float) -> [Float] {
+    // 1. Handle empty audio or invalid targetRMS
+    if length == 0 || targetRMS <= 0.0 {
+        if length > 0 {
+            return Array(UnsafeBufferPointer(start: audioData, count: length)) // Return copy of original
+        }
+        return [] // Return empty if input is empty
+    }
+
+    // 2. Calculate current RMS of the input audio data using vDSP_rmsqv
+    var currentRMS: Float = 0.0
+    vDSP_rmsqv(audioData, 1, &currentRMS, vDSP_Length(length))
+
+    // 3. Handle silence or very low RMS to avoid division by zero or extreme gains
+    let epsilon: Float = 1e-7 // A small value to compare against
+    if currentRMS < epsilon {
+        // Audio is silent or near silent, no gain to apply or return as is (or scaled to targetRMS if it's also very small)
+        // For simplicity, returning a copy, or you could return zeros scaled to targetRMS if that's desired.
+        printFE("Normalization: Audio is silent or near silent (RMS: \(currentRMS)). Returning copy of original audio.")
+        return Array(UnsafeBufferPointer(start: audioData, count: length))
+    }
+
+    // 4. Calculate the gain needed
+    let gain = targetRMS / currentRMS
+    
+    // Optional: Cap the gain to prevent extreme amplification of very quiet signals
+    // let maxGain: Float = 20.0 // Example: limit gain to 20x (26 dB)
+    // let cappedGain = min(gain, maxGain)
+    // printFE("Normalization: Current RMS: \(currentRMS), Target RMS: \(targetRMS), Calculated Gain: \(gain), Capped Gain: \(cappedGain)")
+
+
+    // 5. Create a mutable copy of the audio data
+    var normalizedAudio = [Float](repeating: 0.0, count: length)
+    normalizedAudio.withUnsafeMutableBufferPointer { bufferPtr in
+        guard let baseAddress = bufferPtr.baseAddress else {
+            printFE("Error: Failed to get base address for mutable normalizedAudio buffer.")
+            // In case of error, return original audio
+            for i in 0..<length { bufferPtr[i] = audioData[i] }
+            return
+        }
+        // Copy original data to mutable buffer
+        cblas_scopy(Int32(length), audioData, 1, baseAddress, 1)
+        
+        // 6. Apply the gain using vDSP_vsmul
+        // Using 'gain' directly, or 'cappedGain' if implementing gain capping
+        var mutableGain = gain 
+        vDSP_vsmul(baseAddress, 1, &mutableGain, baseAddress, 1, vDSP_Length(length))
+    }
+    
+    // Optional: Verify new RMS (for debugging)
+    // var newRMS: Float = 0.0
+    // normalizedAudio.withUnsafeBufferPointer { ptr in
+    //    if let base = ptr.baseAddress {
+    //        vDSP_rmsqv(base, 1, &newRMS, vDSP_Length(length))
+    //        printFE("Normalization: RMS after normalization: \(newRMS) (Target was: \(targetRMS))")
+    //    }
+    // }
+
+    return normalizedAudio
+}
+
 @_cdecl("calculate_log_mel_spectrogram")
 public func calculate_log_mel_spectrogram(
     audio_data_ptr: UnsafePointer<Float>,
@@ -46,23 +107,47 @@ public func calculate_log_mel_spectrogram(
         return
     }
 
+    let targetLinearRMS: Float = 0.1 // Corresponds to -20 dBFS
+
+    // --- Normalize Audio (New Step) ---
+    printFE("Normalizing audio to target RMS: \(targetLinearRMS)...")
+    let normalizedAudioSamples = normalizeAudioRMS(
+        audioData: audio_data_ptr, // Original audio data
+        length: AUDIO_LENGTH,      // Original audio length
+        targetRMS: targetLinearRMS
+    )
+    // Important: Check if normalization returned empty if AUDIO_LENGTH was 0, or handle as appropriate.
+    // The current normalizeAudioRMS returns a copy of original if length is 0, or empty if input is empty.
+    // If normalizeAudioRMS could fail or return an empty array when AUDIO_LENGTH > 0, add error handling.
+    // For now, assume it returns valid audio of the same length if AUDIO_LENGTH > 0.
+
+    // The rest of the function should use 'normalizedAudioSamples'.
+    // Update AUDIO_LENGTH if normalization could change it (it shouldn't with current normalizeAudioRMS).
+    // The original audio_data_ptr should no longer be used directly for processing.
+    printFE("Normalization complete. Normalized audio length: \(normalizedAudioSamples.count)")
+
     // --- 2. Padding ---
     let padLength = N_FFT / 2
     var paddedAudio = [Float](repeating: 0.0, count: padLength)
-    if AUDIO_LENGTH > 0 {
-        paddedAudio.append(contentsOf: UnsafeBufferPointer(start: audio_data_ptr, count: AUDIO_LENGTH))
+    if AUDIO_LENGTH > 0 { // Use original AUDIO_LENGTH for this check
+        // OLD: paddedAudio.append(contentsOf: UnsafeBufferPointer(start: audio_data_ptr, count: AUDIO_LENGTH))
+        paddedAudio.append(contentsOf: normalizedAudioSamples) // NEW
     }
     paddedAudio.append(contentsOf: [Float](repeating: 0.0, count: padLength))
-    let paddedAudioLength = paddedAudio.count
-    printFE("Original audio length: \(AUDIO_LENGTH), Padded audio length: \(paddedAudioLength)")
+    // paddedAudioLength should now be based on normalizedAudioSamples.count + 2 * padLength
+    let paddedAudioLength = normalizedAudioSamples.count + 2 * padLength 
+    // OLD: printFE("Original audio length: \(AUDIO_LENGTH), Padded audio length: \(paddedAudioLength)")
+    printFE("Normalized audio length: \(normalizedAudioSamples.count), Padded audio length: \(paddedAudioLength)") // NEW
 
     // --- 3. Calculate Number of Frames ---
-    let numFrames = Int(floor(Double(AUDIO_LENGTH) / Double(HOP_LENGTH))) + 1
+    // This should still be based on the original unpadded length of the (now normalized) audio.
+    // normalizedAudioSamples.count should be equal to AUDIO_LENGTH if normalization succeeded.
+    let numFrames = Int(floor(Double(normalizedAudioSamples.count) / Double(HOP_LENGTH))) + 1
     if numFrames <= 0 {
-        print("Swift FeatureExtractor Error: Not enough audio data for frames.")
+        print("Swift FeatureExtractor Error: Not enough audio data for frames after normalization.")
         return
     }
-    printFE("Calculated num_frames: \(numFrames)")
+    printFE("Calculated num_frames (from normalized audio): \(numFrames)")
 
     // --- 4. Prepare FFT Setup & Window ---
     var hannWindow = [Float](repeating: 0.0, count: N_FFT)
