@@ -12,6 +12,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:pie_chart/pie_chart.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Enum to manage different UI screens/states
 enum AppScreenState {
@@ -119,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isHistoryLoading = false;
   String? _historyError;
   String? _cachedDeviceID;
+  bool _historySheetFetchInitiated = false;
 
   final List<Color> _pieChartColorList = [ // Expanded list for more genres
     Colors.blue.shade400, Colors.red.shade400, Colors.green.shade400, Colors.orange.shade400,
@@ -137,6 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadMelFilterbank();
     _requestMicrophonePermissionOnInit();
     _cacheDeviceID();
+    _loadInitialHistoryFromCache();
     _processingScheduler = Timer.periodic(const Duration(milliseconds: 1000), (timer) {
       if (_currentScreenState != AppScreenState.showingResults &&
           _isMicrophoneRecording &&
@@ -603,29 +606,64 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _fetchHistoryAndShowChart() async {
+  Future<void> _loadInitialHistoryFromCache() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? cachedHistoryJson = prefs.getString('genreHistoryCache');
+      if (cachedHistoryJson != null) {
+        Map<String, dynamic> decodedMap = jsonDecode(cachedHistoryJson);
+        if (mounted) {
+             // Silently update the map. The UI will pick it up when the sheet is shown.
+            _genreHistoryDataMap = decodedMap.map((key, value) => MapEntry(key, value.toDouble()));
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print("HomeScreen: Error loading history from cache: $e");
+      // Optionally clear corrupted cache
+      // SharedPreferences prefs = await SharedPreferences.getInstance();
+      // await prefs.remove('genreHistoryCache');
+    }
+  }
+
+  Future<void> _saveHistoryToCache(Map<String, double> dataToCache) async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String jsonString = jsonEncode(dataToCache);
+      await prefs.setString('genreHistoryCache', jsonString);
+    } catch (e) {
+      if (kDebugMode) print("HomeScreen: Error saving history to cache: $e");
+    }
+  }
+
+  Future<void> _fetchHistoryAndShowChart({StateSetter? setSheetStateCallback}) async {
     if (!mounted) return;
+
+    final updateState = setSheetStateCallback ?? setState;
+
     if (_cachedDeviceID == null || _cachedDeviceID!.startsWith("unknown_device")) {
-      await _cacheDeviceID();
+      await _cacheDeviceID(); // Ensure device ID is cached
+      if (!mounted) return; // Check mounted again after await
       if (_cachedDeviceID == null || _cachedDeviceID!.startsWith("unknown_device")) {
-        if(mounted) setState(() => _historyError = "Device ID unavailable for history.");
+        updateState(() => _historyError = "Device ID unavailable for history.");
         return;
       }
     }
 
-    setState(() { _isHistoryLoading = true; _historyError = null; _genreHistoryDataMap = {}; });
+    updateState(() { _isHistoryLoading = true; _historyError = null; /* Keep existing _genreHistoryDataMap for spinner background */ });
+
     // !!! IMPORTANT: REPLACE WITH YOUR ACTUAL API GATEWAY URL !!!
     final String readHistoryApiUrl = 'https://b7flkztfy5.execute-api.ap-southeast-1.amazonaws.com/history?deviceID=${Uri.encodeComponent(_cachedDeviceID!)}';
     if (readHistoryApiUrl.startsWith('YOUR_API_GATEWAY_INVOKE_URL')) {
       if (kDebugMode) print("HomeScreen: History Read API URL not configured. Skipping history fetch.");
-      if(mounted) setState(() => _historyError = "App config error for history.");
-      if(mounted) setState(() => _isHistoryLoading = false);
+      if (mounted) updateState(() { _historyError = "App config error for history."; _isHistoryLoading = false; });
       return;
     }
 
     try {
       final response = await http.get(Uri.parse(readHistoryApiUrl)).timeout(const Duration(seconds: 15));
-      if (mounted && response.statusCode == 200) {
+      if (!mounted) return; // Check mounted again after await
+
+      if (response.statusCode == 200) {
         final List<dynamic> historyItems = jsonDecode(response.body);
         Map<String, double> counts = {};
         for (var item in historyItems) {
@@ -634,27 +672,48 @@ class _HomeScreenState extends State<HomeScreen> {
             counts[genre] = (counts[genre] ?? 0) + 1;
           }
         }
-        setState(() { _genreHistoryDataMap = counts; _isHistoryLoading = false; });
-      } else if (mounted) {
-        setState(() => _historyError = "Failed to load history (${response.statusCode}).");
+        await _saveHistoryToCache(counts); // Save to cache
+        updateState(() { _genreHistoryDataMap = counts; _isHistoryLoading = false; _historyError = null; });
+      } else {
+        updateState(() { _historyError = "Failed to load history (${response.statusCode})."; _isHistoryLoading = false;});
       }
     } on TimeoutException catch (_) {
-      if (mounted) setState(() => _historyError = "History request timed out.");
+      if (!mounted) return;
+      updateState(() { _historyError = "History request timed out."; _isHistoryLoading = false; });
     } catch (e) {
-      if (mounted) setState(() => _historyError = "Error loading history.");
+      if (!mounted) return;
+      updateState(() { _historyError = "Error loading history: ${e.toString()}"; _isHistoryLoading = false; });
     } finally {
-      if (mounted) setState(() => _isHistoryLoading = false);
+      // _isHistoryLoading is already set to false in success/error specific blocks above.
+      // Redundant call, but safe:
+      // if (mounted && _isHistoryLoading) updateState(() => _isHistoryLoading = false);
     }
   }
 
   void _showHistoryBottomSheet(BuildContext context) {
-    _fetchHistoryAndShowChart();
+    _historySheetFetchInitiated = false; // Reset flag each time sheet is shown
+
+    // The _genreHistoryDataMap might already contain cached data from _loadInitialHistoryFromCache()
+    // or from a previous fetch if the sheet was opened before in this app session.
+    // The PieChart will display this existing data immediately.
+    // The _fetchHistoryAndShowChart call below will then update it from the network.
+
     showModalBottomSheet<void>(
       context: context, backgroundColor: Colors.transparent,
       isScrollControlled: true, elevation: 0,
       builder: (BuildContext builderContext) {
+        // Removed the empty WidgetsBinding.instance.addPostFrameCallback((_) {});
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setSheetState) {
+            if (!_historySheetFetchInitiated && mounted) {
+              _historySheetFetchInitiated = true; // Mark that fetch has been initiated for this sheet instance
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) { // Ensure widget is still mounted when callback executes
+                  _fetchHistoryAndShowChart(setSheetStateCallback: setSheetState);
+                }
+              });
+            }
+
             Widget content;
             if (_isHistoryLoading) {
               content = const Center(child: CircularProgressIndicator(color: Colors.black54));
@@ -670,6 +729,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   animationDuration: const Duration(milliseconds: 800),
                   chartLegendSpacing: 42,
                   chartRadius: MediaQuery.of(context).size.width / 2.5,
+                  key: ValueKey(_genreHistoryDataMap.hashCode),
                   colorList: _pieChartColorList.take(_genreHistoryDataMap.length).toList(),
                   initialAngleInDegree: 0,
                   chartType: ChartType.ring,
