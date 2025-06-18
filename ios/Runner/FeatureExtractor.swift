@@ -32,9 +32,9 @@ fileprivate func normalizeAudioRMS(audioData: UnsafePointer<Float>, length: Int,
     let gain = targetRMS / currentRMS
     
     // Optional: Cap the gain to prevent extreme amplification of very quiet signals
-    // let maxGain: Float = 20.0 // Example: limit gain to 20x (26 dB)
-    // let cappedGain = min(gain, maxGain)
-    // printFE("Normalization: Current RMS: \(currentRMS), Target RMS: \(targetRMS), Calculated Gain: \(gain), Capped Gain: \(cappedGain)")
+    let maxGain: Float = 15.0 // Example: limit gain to 15x (approx 23.5 dB)
+    let cappedGain = min(gain, maxGain)
+    printFE("Normalization: Current RMS: \(currentRMS), Target RMS: \(targetRMS), Calculated Gain: \(gain), Capped Gain: \(cappedGain)")
 
 
     // 5. Create a mutable copy of the audio data
@@ -51,18 +51,22 @@ fileprivate func normalizeAudioRMS(audioData: UnsafePointer<Float>, length: Int,
         
         // 6. Apply the gain using vDSP_vsmul
         // Using 'gain' directly, or 'cappedGain' if implementing gain capping
-        var mutableGain = gain 
+        var mutableGain = cappedGain // Use cappedGain
         vDSP_vsmul(baseAddress, 1, &mutableGain, baseAddress, 1, vDSP_Length(length))
     }
     
-    // Optional: Verify new RMS (for debugging)
-    // var newRMS: Float = 0.0
-    // normalizedAudio.withUnsafeBufferPointer { ptr in
-    //    if let base = ptr.baseAddress {
-    //        vDSP_rmsqv(base, 1, &newRMS, vDSP_Length(length))
-    //        printFE("Normalization: RMS after normalization: \(newRMS) (Target was: \(targetRMS))")
-    //    }
-    // }
+    // VERIFY new RMS (for debugging)
+    var newRMS: Float = 0.0
+    normalizedAudio.withUnsafeBufferPointer { ptr in
+       if let base = ptr.baseAddress {
+           if length > 0 { // Add check for length > 0 to avoid vDSP_rmsqv error on empty array
+               vDSP_rmsqv(base, 1, &newRMS, vDSP_Length(length))
+               printFE("Normalization: RMS after normalization: \(newRMS) (Target was: \(targetRMS), Gain Applied: \(cappedGain))")
+           } else {
+               printFE("Normalization: Audio length is 0 after normalization attempt, cannot calculate new RMS.")
+           }
+       }
+    }
 
     return normalizedAudio
 }
@@ -107,47 +111,48 @@ public func calculate_log_mel_spectrogram(
         return
     }
 
-    let targetLinearRMS: Float = 0.1 // Corresponds to -20 dBFS
+    // let targetLinearRMS: Float = 0.1 // REVERTED from 0.05 back to 0.1
 
-    // --- Normalize Audio (New Step) ---
-    printFE("Normalizing audio to target RMS: \(targetLinearRMS)...")
-    let normalizedAudioSamples = normalizeAudioRMS(
-        audioData: audio_data_ptr, // Original audio data
-        length: AUDIO_LENGTH,      // Original audio length
-        targetRMS: targetLinearRMS
-    )
-    // Important: Check if normalization returned empty if AUDIO_LENGTH was 0, or handle as appropriate.
-    // The current normalizeAudioRMS returns a copy of original if length is 0, or empty if input is empty.
-    // If normalizeAudioRMS could fail or return an empty array when AUDIO_LENGTH > 0, add error handling.
-    // For now, assume it returns valid audio of the same length if AUDIO_LENGTH > 0.
+    // --- Normalize Audio (New Step) ---  >>> REMOVING THIS STEP TO MATCH PYTHON SCRIPT <<<
+    // printFE("Normalizing audio to target RMS: \(targetLinearRMS)...")
+    // let normalizedAudioSamples = normalizeAudioRMS(
+    //     audioData: audio_data_ptr, 
+    //     length: AUDIO_LENGTH,      
+    //     targetRMS: targetLinearRMS
+    // )
+    // printFE("Normalization complete. Normalized audio length: \(normalizedAudioSamples.count)")
 
-    // The rest of the function should use 'normalizedAudioSamples'.
-    // Update AUDIO_LENGTH if normalization could change it (it shouldn't with current normalizeAudioRMS).
-    // The original audio_data_ptr should no longer be used directly for processing.
-    printFE("Normalization complete. Normalized audio length: \(normalizedAudioSamples.count)")
+    // if normalizedAudioSamples.count > 20 { 
+    //     let firstSamples = normalizedAudioSamples[0..<20].map { String(format: "%.4f", $0) }.joined(separator: ", ")
+    //     printFE("First few normalized samples: \(firstSamples)")
+    //     var checkRMS: Float = 0.0
+    //     if normalizedAudioSamples.count > 0 { 
+    //          vDSP_rmsqv(normalizedAudioSamples, 1, &checkRMS, vDSP_Length(normalizedAudioSamples.count))
+    //          printFE("RMS of normalizedAudioSamples just before padding: \(checkRMS)")
+    //     }
+    // } else if normalizedAudioSamples.isEmpty {
+    //     printFE("normalizedAudioSamples is EMPTY after normalization call!")
+    // }
 
-    // --- 2. Padding ---
+    // --- 2. Padding (using original audio_data_ptr) ---
     let padLength = N_FFT / 2
     var paddedAudio = [Float](repeating: 0.0, count: padLength)
-    if AUDIO_LENGTH > 0 { // Use original AUDIO_LENGTH for this check
-        // OLD: paddedAudio.append(contentsOf: UnsafeBufferPointer(start: audio_data_ptr, count: AUDIO_LENGTH))
-        paddedAudio.append(contentsOf: normalizedAudioSamples) // NEW
+    if AUDIO_LENGTH > 0 { 
+        // paddedAudio.append(contentsOf: normalizedAudioSamples) // OLD when normalizing
+        paddedAudio.append(contentsOf: UnsafeBufferPointer(start: audio_data_ptr, count: AUDIO_LENGTH)) // NEW: Use original audio
     }
     paddedAudio.append(contentsOf: [Float](repeating: 0.0, count: padLength))
-    // paddedAudioLength should now be based on normalizedAudioSamples.count + 2 * padLength
-    let paddedAudioLength = normalizedAudioSamples.count + 2 * padLength 
-    // OLD: printFE("Original audio length: \(AUDIO_LENGTH), Padded audio length: \(paddedAudioLength)")
-    printFE("Normalized audio length: \(normalizedAudioSamples.count), Padded audio length: \(paddedAudioLength)") // NEW
+    let paddedAudioLength = AUDIO_LENGTH + 2 * padLength 
+    printFE("Original audio length: \(AUDIO_LENGTH), Padded audio length: \(paddedAudioLength)")
 
-    // --- 3. Calculate Number of Frames ---
-    // This should still be based on the original unpadded length of the (now normalized) audio.
-    // normalizedAudioSamples.count should be equal to AUDIO_LENGTH if normalization succeeded.
-    let numFrames = Int(floor(Double(normalizedAudioSamples.count) / Double(HOP_LENGTH))) + 1
+    // --- 3. Calculate Number of Frames --- 
+    // Based on original unpadded audio length
+    let numFrames = Int(floor(Double(AUDIO_LENGTH) / Double(HOP_LENGTH))) + 1
     if numFrames <= 0 {
-        print("Swift FeatureExtractor Error: Not enough audio data for frames after normalization.")
+        print("Swift FeatureExtractor Error: Not enough audio data for frames.")
         return
     }
-    printFE("Calculated num_frames (from normalized audio): \(numFrames)")
+    printFE("Calculated num_frames (from original audio): \(numFrames)")
 
     // --- 4. Prepare FFT Setup & Window ---
     var hannWindow = [Float](repeating: 0.0, count: N_FFT)
@@ -222,39 +227,45 @@ public func calculate_log_mel_spectrogram(
     printFE("Mel spectrogram raw energies calculated. Flat size: \(melEnergiesFlat.count)")
 
     // --- 6. Logarithmic Conversion (Power to dB) ---
-    // Using vvlog10f from vForce (C-API)
     
     guard !melEnergiesFlat.isEmpty else { print("Swift Error: melEnergiesFlat empty before log conversion."); return }
 
     let amin: Float = 1e-10
     let top_db: Float = 80.0
 
+    // --- REVERT TO S_ref_value logic to match librosa.power_to_db(ref=np.max) ---
     var S_ref_value: Float = 0.0
-    vDSP_maxv(&melEnergiesFlat, 1, &S_ref_value, vDSP_Length(melEnergiesFlat.count))
+    if melEnergiesFlat.count > 0 { 
+        vDSP_maxv(&melEnergiesFlat, 1, &S_ref_value, vDSP_Length(melEnergiesFlat.count))
+    }
+    printFE("Max raw Mel energy (S_ref_value): \(S_ref_value)") // Keep this for verification
 
     var S_clipped = melEnergiesFlat
-    for i in 0..<S_clipped.count { S_clipped[i] = max(amin, S_clipped[i]) }
-    let ref_value_clipped_scalar = max(amin, S_ref_value)
+    for i in 0..<S_clipped.count { S_clipped[i] = max(amin, S_clipped[i]) } // Clip to amin 
+    let ref_value_clipped_scalar = max(amin, S_ref_value) // Reference is max of S_clipped (or amin)
 
     var S_div_ref = [Float](repeating: 0.0, count: S_clipped.count)
-    if ref_value_clipped_scalar > Float.ulpOfOne * 100 {
+    if ref_value_clipped_scalar > Float.ulpOfOne * 100 { 
         var divisor = ref_value_clipped_scalar
         vDSP_vsdiv(&S_clipped, 1, &divisor, &S_div_ref, 1, vDSP_Length(S_clipped.count))
     } else {
         printFE("Warning: ref_value_clipped_scalar (\(ref_value_clipped_scalar)) is small. Manually computing S_div_ref.")
         for i in 0..<S_clipped.count {
             if ref_value_clipped_scalar > Float.ulpOfOne * 100 { S_div_ref[i] = S_clipped[i] / ref_value_clipped_scalar }
-            else if S_clipped[i] > Float.ulpOfOne * 100 { S_div_ref[i] = Float.greatestFiniteMagnitude }
-            else { S_div_ref[i] = 1.0 }
+            else if S_clipped[i] > Float.ulpOfOne * 100 { S_div_ref[i] = Float.greatestFiniteMagnitude } // Avoid NaN if S_clipped[i] is large and ref is tiny
+            else { S_div_ref[i] = 1.0 } // Both S_clipped[i] and ref are tiny, treat as S/ref = 1
         }
     }
+    // Ensure S_div_ref values are positive for log operation, clipping very small/zero values to ulpOfOne.
+    // This step is crucial if any S_clipped[i] was amin and ref_value_clipped_scalar was also amin, leading to S_div_ref[i] = 1,
+    // or if S_clipped[i] was extremely small compared to ref_value_clipped_scalar.
     for i in 0..<S_div_ref.count { S_div_ref[i] = max(Float.ulpOfOne, S_div_ref[i]) }
 
-    var log10_S_div_ref = [Float](repeating: 0.0, count: S_div_ref.count)
-    var logOperationErrorOccurred = false // Renamed to avoid conflict with stftFrameProcessingErrorOccurred
+    var log10_S_div_ref = [Float](repeating: 0.0, count: S_div_ref.count) // Renamed back
+    var logOperationErrorOccurred = false 
     
-    if !S_div_ref.isEmpty {
-        printFE("Using vvlog10f (C-API for log10)")
+    if !S_div_ref.isEmpty { // Operate on S_div_ref
+        printFE("Using vvlog10f (C-API for log10) on S_div_ref")
         S_div_ref.withUnsafeBufferPointer { xPtr_unsafe in
             log10_S_div_ref.withUnsafeMutableBufferPointer { yPtr_unsafe in
                 var n_elements = Int32(S_div_ref.count)
@@ -270,18 +281,24 @@ public func calculate_log_mel_spectrogram(
     var db_values = [Float](repeating: 0.0, count: log10_S_div_ref.count)
     let ten_scalar: Float = 10.0
     
-    var mutable_log_input_for_mul = log10_S_div_ref
+    var mutable_log_input_for_mul = log10_S_div_ref // Use log10_S_div_ref
     vDSP_vsmul(&mutable_log_input_for_mul, 1, [ten_scalar], &db_values, 1, vDSP_Length(mutable_log_input_for_mul.count))
 
-    var max_db_val: Float = -Float.infinity
-    if !db_values.isEmpty { vDSP_maxv(&db_values, 1, &max_db_val, vDSP_Length(db_values.count)) }
-    else { max_db_val = 0.0 }
-    
-    let cutOff_db = max_db_val - top_db
+    var max_db_val: Float = -Float.infinity // This will be the max of (10 * log10(S/S_ref)), so should be 0.0
+    if !db_values.isEmpty { 
+        vDSP_maxv(&db_values, 1, &max_db_val, vDSP_Length(db_values.count))
+    } else { 
+        max_db_val = 0.0 
+    }
+    // printFE("Max dB after 10*log10(S_clipped): \(max_db_val)") // This log line is from the incorrect version
+    printFE("Max dB (should be ~0.0 if ref=np.max logic is correct): \(max_db_val)") // Corrected log line
+        
+    let cutOff_db = max_db_val - top_db // e.g., 0.0 - 80.0 = -80.0
     for i in 0..<db_values.count { db_values[i] = max(db_values[i], cutOff_db) }
 
-    melEnergiesFlat = db_values
-    printFE("Log-Mel (dB) values calculated. Max dB before top_db clip: \(max_db_val)")
+    melEnergiesFlat = db_values 
+    // printFE("Log-Mel (dB) values finalized. Max dB after top_db logic: \(max_db_val), Cutoff was: \(cutOff_db)")
+    printFE("Log-Mel (dB) values finalized. Peak dB: \(max_db_val), Cutoff applied at: \(cutOff_db)") // More descriptive
 
     // --- 7. Prepare Output Buffer ---
     let totalOutputElements = N_MELS * numFrames

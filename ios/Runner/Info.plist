@@ -43,8 +43,10 @@
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>This app needs access to your media library to allow you to select audio files for processing and genre identification.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Genessis needs microphone access to use the full functionality.</string>
+	<string>This app needs microphone access to record audio for genre identification.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 </dict>

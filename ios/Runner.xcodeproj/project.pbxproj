@@ -17,6 +17,7 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		BFD44AA3F53992AFC5D5213C /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9090F9CD7E659585ADED43BF /* Pods_RunnerTests.framework */; };
 		FA0D4F8F2DDB09D600C348E7 /* exported_symbols.txt in Resources */ = {isa = PBXBuildFile; fileRef = FA0D4F8E2DDB09CC00C348E7 /* exported_symbols.txt */; };
+		FA1F33072DE3767A00461AD1 /* NoiseReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F33062DE3767400461AD1 /* NoiseReducer.swift */; };
 		FA4C2AC42DD348670015808B /* fastest_coeffs.h in Sources */ = {isa = PBXBuildFile; fileRef = FA4C2AB52DD348660015808B /* fastest_coeffs.h */; };
 		FA4C2AC52DD348670015808B /* common.h in Sources */ = {isa = PBXBuildFile; fileRef = FA4C2AB62DD348670015808B /* common.h */; };
 		FA4C2AC72DD348670015808B /* samplerate.c in Sources */ = {isa = PBXBuildFile; fileRef = FA4C2AB82DD348670015808B /* samplerate.c */; };
@@ -80,6 +81,7 @@
 		9D21C5CD05577EDDE2967AF3 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		EC252337C907357E31E75BE8 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		FA0D4F8E2DDB09CC00C348E7 /* exported_symbols.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = exported_symbols.txt; sourceTree = "<group>"; };
+		FA1F33062DE3767400461AD1 /* NoiseReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoiseReducer.swift; sourceTree = "<group>"; };
 		FA4C2AB52DD348660015808B /* fastest_coeffs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = fastest_coeffs.h; path = libs/libsamplerate/src/fastest_coeffs.h; sourceTree = "<group>"; };
 		FA4C2AB62DD348670015808B /* common.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = common.h; path = libs/libsamplerate/src/common.h; sourceTree = "<group>"; };
 		FA4C2AB72DD348670015808B /* Makefile.in */ = {isa = PBXFileReference; lastKnownFileType = text; name = Makefile.in; path = libs/libsamplerate/src/Makefile.in; sourceTree = "<group>"; };
@@ -203,6 +205,7 @@
 		97C146F01CF9000F007C117D /* Runner */ = {
 			isa = PBXGroup;
 			children = (
+				FA1F33062DE3767400461AD1 /* NoiseReducer.swift */,
 				FA0D4F8E2DDB09CC00C348E7 /* exported_symbols.txt */,
 				FA5BE0BD2DD07980003633CB /* AudioProcessor.swift */,
 				97C146FA1CF9000F007C117D /* Main.storyboard */,
@@ -454,6 +457,7 @@
 				FA4C2AC52DD348670015808B /* common.h in Sources */,
 				FA4C2AC72DD348670015808B /* samplerate.c in Sources */,
 				FA4C2AC82DD348670015808B /* src_zoh.c in Sources */,
+				FA1F33072DE3767A00461AD1 /* NoiseReducer.swift in Sources */,
 				FA4C2ACC2DD348670015808B /* src_sinc.c in Sources */,
 				FA4C2ACD2DD348670015808B /* src_linear.c in Sources */,
 				FA4C2ACE2DD348670015808B /* samplerate.h in Sources */,
