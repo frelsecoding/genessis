@@ -18,7 +18,7 @@ This project is a Flutter application. To get started, ensure you have Flutter i
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your_username/your_repository.git
+    git clone https://github.com/frelsecoding/genessis.git
     cd thesis_app
     ```
 2.  **Install dependencies:**
